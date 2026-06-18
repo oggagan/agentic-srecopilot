@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import incidents
 from app.config import settings
+from app.core.observability import setup_tracing
+
+setup_tracing()
 
 app = FastAPI(title="Agentic SRE Copilot", version="0.1.0")
 
