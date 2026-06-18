@@ -13,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
 from app.core.llm_client import get_chat_model
+from app.core.pgvector_store import hybrid_search
 from app.graph.state import IncidentState
 
 # repo root = build.py -> graph -> app -> backend -> root
@@ -79,18 +80,27 @@ async def build_graph():
         return {"evidence": "\n\n".join(chunks)}
 
     async def diagnose(state: IncidentState) -> dict:
+        # RAG: retrieve relevant runbooks to ground the diagnosis.
+        query = f"{state['trigger']} {state.get('incident_type', '')} {state.get('target_service', '')}"
+        try:
+            books = hybrid_search(query)
+        except Exception:
+            books = []
+        rb_text = "\n\n".join(f"[{b['title']}]\n{b['text']}" for b in books) or "(no runbooks found)"
         model = get_chat_model("reasoner")
         r = await model.ainvoke(
             [
                 SystemMessage(
-                    content="You are an SRE. From the alert and evidence, state the single most likely root cause and a confidence of low, medium, or high. Be concise."
+                    content="You are an SRE. From the alert, evidence, and retrieved runbooks, state the single "
+                    "most likely root cause and a confidence of low, medium, or high. Add a 'Runbook:' line "
+                    "naming the runbook you relied on, if any. Be concise."
                 ),
                 HumanMessage(
-                    content=f"ALERT:\n{state['trigger']}\n\nEVIDENCE:\n{state['evidence']}"
+                    content=f"ALERT:\n{state['trigger']}\n\nEVIDENCE:\n{state['evidence']}\n\nRUNBOOKS:\n{rb_text}"
                 ),
             ]
         )
-        return {"diagnosis": r.content}
+        return {"diagnosis": r.content, "runbooks": list(dict.fromkeys(b["title"] for b in books))}
 
     async def propose(state: IncidentState) -> dict:
         model = get_chat_model("chat")

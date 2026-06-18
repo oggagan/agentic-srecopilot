@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # observability
     otel_enabled: bool = True
     phoenix_enabled: bool = True
+    phoenix_otlp_endpoint: str = "http://localhost:4317"
+
+    # database + RAG
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/srecopilot"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
+    rag_top_k: int = 5
 
 
 settings = Settings()
