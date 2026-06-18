@@ -1,6 +1,9 @@
 """FastAPI entrypoint for the Agentic SRE Copilot."""
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.api import incidents
 from app.config import settings
@@ -8,7 +11,17 @@ from app.core.observability import setup_tracing
 
 setup_tracing()
 
-app = FastAPI(title="Agentic SRE Copilot", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # One durable checkpointer for the whole app, so interrupts survive across requests.
+    async with AsyncPostgresSaver.from_conn_string(settings.database_url) as saver:
+        await saver.setup()
+        app.state.saver = saver
+        yield
+
+
+app = FastAPI(title="Agentic SRE Copilot", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

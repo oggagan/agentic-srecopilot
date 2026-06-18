@@ -9,6 +9,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "langchain-openai>=1.3.2",
     "langgraph>=1.2.5",
+    "langgraph-checkpoint-postgres>=3.1.0",
     "openinference-instrumentation-langchain>=0.1.66",
     "opentelemetry-api>=1.42.1",
     "opentelemetry-sdk>=1.42.1",

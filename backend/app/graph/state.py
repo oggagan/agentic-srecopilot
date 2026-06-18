@@ -13,3 +13,5 @@ class IncidentState(TypedDict, total=False):
     runbooks: list        # titles of runbooks retrieved for the diagnosis
     diagnosis: str        # root cause from the reasoner
     proposed_fix: str     # suggested remediation, NOT executed
+    approval: dict        # human decision from the interrupt gate
+    execution: dict       # result of executing the approved plan

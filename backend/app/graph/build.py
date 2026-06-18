@@ -10,6 +10,7 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from app.core.llm_client import get_chat_model
@@ -43,7 +44,7 @@ class Triage(BaseModel):
     severity: str = Field(description="sev1, sev2, or sev3")
 
 
-async def build_graph():
+async def build_graph(checkpointer=None):
     tools = await _mcp_client().get_tools()
     by_name = {t.name: t for t in tools}
 
@@ -131,6 +132,32 @@ async def build_graph():
         )
         return {"proposed_fix": r.content}
 
+    async def gate(state: IncidentState) -> dict:
+        # Pause and persist; a human approves out of band, then the graph resumes here.
+        decision = interrupt(
+            {
+                "incident_type": state.get("incident_type"),
+                "target_service": state.get("target_service"),
+                "diagnosis": state.get("diagnosis"),
+                "proposed_fix": state.get("proposed_fix"),
+            }
+        )
+        return {"approval": decision if isinstance(decision, dict) else {"approved": bool(decision)}}
+
+    async def execute(state: IncidentState) -> dict:
+        # MVP-5 runs approved steps via the fleet-write MCP server against the sandbox.
+        # For now this is a dry run: it records what would run, but performs no writes.
+        return {
+            "execution": {
+                "status": "dry_run",
+                "note": "approved; real execution is wired to the sandbox in MVP-5",
+                "plan": state.get("proposed_fix"),
+            }
+        }
+
+    def after_gate(state: IncidentState) -> str:
+        return "execute" if (state.get("approval") or {}).get("approved") else END
+
     g = StateGraph(IncidentState)
     g.add_node("triage", triage)
     g.add_node("investigate_services", investigate_services)
@@ -143,11 +170,26 @@ async def build_graph():
     for n in ("investigate_services", "investigate_metrics", "investigate_logs"):
         g.add_edge("triage", n)
         g.add_edge(n, "diagnose")  # fan in: diagnose waits for all three
+    g.add_node("gate", gate)
+    g.add_node("execute", execute)
     g.add_edge("diagnose", "propose")
-    g.add_edge("propose", END)
-    return g.compile()
+    g.add_edge("propose", "gate")
+    g.add_conditional_edges("gate", after_gate, {"execute": "execute", END: END})
+    g.add_edge("execute", END)
+    return g.compile(checkpointer=checkpointer)
 
 
-async def run(trigger: str) -> dict:
-    graph = await build_graph()
-    return await graph.ainvoke({"trigger": trigger})
+async def build_graph_default():
+    """Build with an in memory checkpointer, for CLI use without Postgres."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    return await build_graph(checkpointer=MemorySaver())
+
+
+async def run(trigger: str, thread_id: str = "cli") -> dict:
+    """CLI helper: run until the approval gate and return the state snapshot (no execution)."""
+    graph = await build_graph_default()
+    config = {"configurable": {"thread_id": thread_id}}
+    await graph.ainvoke({"trigger": trigger}, config)
+    snapshot = await graph.aget_state(config)
+    return dict(snapshot.values)
