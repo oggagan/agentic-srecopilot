@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: srecopilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    restart: unless-stopped
+    ports:
+      - "6006:6006"   # UI
+      - "4317:4317"   # OTLP gRPC ingest
+    volumes:
+      - phoenixdata:/data
+
+  langfuse:
+    image: langfuse/langfuse:2
+    restart: unless-stopped   # auto recovers if it starts before postgres is ready
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-nextauth-secret-change-me}
+      SALT: ${LANGFUSE_SALT:-dev-salt-change-me}
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  pgdata:
+  phoenixdata:
