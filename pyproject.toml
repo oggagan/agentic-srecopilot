@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Agentic Cloud-Ops / SRE copilot: multi-agent incident diagnosis and remediation with evals"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastmcp>=3.4.2",
     "langchain-openai>=1.3.2",
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
