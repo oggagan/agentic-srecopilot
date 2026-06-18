@@ -5,7 +5,9 @@ description = "Agentic Cloud-Ops / SRE copilot: multi-agent incident diagnosis a
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastmcp>=3.4.2",
+    "langchain-mcp-adapters>=0.3.0",
     "langchain-openai>=1.3.2",
+    "langgraph>=1.2.5",
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
 ]
