@@ -64,12 +64,7 @@ async def build_graph():
             "severity": r.severity,
         }
 
-    async def investigate(state: IncidentState) -> dict:
-        calls = [("list_failed_services", {}), ("disk_usage", {}), ("memory_usage", {})]
-        svc = state.get("target_service", "unknown")
-        if svc and svc != "unknown":
-            calls.insert(0, ("service_status", {"service": svc}))
-            calls.append(("tail_log", {"service": svc, "lines": 30}))
+    async def _run_tools(calls: list[tuple[str, dict]]) -> str:
         chunks = []
         for name, args in calls:
             tool = by_name.get(name)
@@ -77,7 +72,26 @@ async def build_graph():
                 continue
             out = await tool.ainvoke(args)
             chunks.append(f"### {name}({args})\n{out}")
-        return {"evidence": "\n\n".join(chunks)}
+        return "\n\n".join(chunks)
+
+    # Three investigators that fan out from triage and run concurrently.
+    async def investigate_services(state: IncidentState) -> dict:
+        svc = state.get("target_service", "unknown")
+        calls: list[tuple[str, dict]] = [("list_failed_services", {})]
+        if svc and svc != "unknown":
+            calls.insert(0, ("service_status", {"service": svc}))
+        return {"findings": [{"source": "services", "summary": await _run_tools(calls)}]}
+
+    async def investigate_metrics(state: IncidentState) -> dict:
+        summary = await _run_tools([("disk_usage", {}), ("memory_usage", {}), ("cpu_load", {})])
+        return {"findings": [{"source": "metrics", "summary": summary}]}
+
+    async def investigate_logs(state: IncidentState) -> dict:
+        svc = state.get("target_service", "unknown")
+        if not svc or svc == "unknown":
+            return {"findings": [{"source": "logs", "summary": "(no target service identified)"}]}
+        summary = await _run_tools([("tail_log", {"service": svc, "lines": 30})])
+        return {"findings": [{"source": "logs", "summary": summary}]}
 
     async def diagnose(state: IncidentState) -> dict:
         # RAG: retrieve relevant runbooks to ground the diagnosis.
@@ -87,6 +101,9 @@ async def build_graph():
         except Exception:
             books = []
         rb_text = "\n\n".join(f"[{b['title']}]\n{b['text']}" for b in books) or "(no runbooks found)"
+        evidence = "\n\n".join(
+            f"## {f['source']}\n{f['summary']}" for f in state.get("findings", [])
+        ) or "(no evidence gathered)"
         model = get_chat_model("reasoner")
         r = await model.ainvoke(
             [
@@ -96,7 +113,7 @@ async def build_graph():
                     "naming the runbook you relied on, if any. Be concise."
                 ),
                 HumanMessage(
-                    content=f"ALERT:\n{state['trigger']}\n\nEVIDENCE:\n{state['evidence']}\n\nRUNBOOKS:\n{rb_text}"
+                    content=f"ALERT:\n{state['trigger']}\n\nEVIDENCE:\n{evidence}\n\nRUNBOOKS:\n{rb_text}"
                 ),
             ]
         )
@@ -116,12 +133,16 @@ async def build_graph():
 
     g = StateGraph(IncidentState)
     g.add_node("triage", triage)
-    g.add_node("investigate", investigate)
+    g.add_node("investigate_services", investigate_services)
+    g.add_node("investigate_metrics", investigate_metrics)
+    g.add_node("investigate_logs", investigate_logs)
     g.add_node("diagnose", diagnose)
     g.add_node("propose", propose)
     g.add_edge(START, "triage")
-    g.add_edge("triage", "investigate")
-    g.add_edge("investigate", "diagnose")
+    # fan out: triage -> all investigators in parallel
+    for n in ("investigate_services", "investigate_metrics", "investigate_logs"):
+        g.add_edge("triage", n)
+        g.add_edge(n, "diagnose")  # fan in: diagnose waits for all three
     g.add_edge("diagnose", "propose")
     g.add_edge("propose", END)
     return g.compile()
