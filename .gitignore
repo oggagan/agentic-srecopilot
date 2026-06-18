@@ -1,0 +1,28 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# env and secrets (never commit)
+.env
+*.pem
+*.key
+*.crt
+
+# node / frontend build
+node_modules/
+frontend/dist/
+
+# local only thinking zone (specs, prds, planning)
+docs/
+planning/
+
+# corpus may hold internal server docs and runbooks
+corpus/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

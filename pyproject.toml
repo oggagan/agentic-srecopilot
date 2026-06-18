@@ -1,0 +1,6 @@
+[project]
+name = "agentic-srecopilot"
+version = "0.1.0"
+description = "Agentic Cloud-Ops / SRE copilot: multi-agent incident diagnosis and remediation with evals"
+requires-python = ">=3.12,<3.13"
+dependencies = []
