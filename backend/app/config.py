@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     otel_enabled: bool = True
     phoenix_enabled: bool = True
     phoenix_otlp_endpoint: str = "http://localhost:4317"
+    langfuse_enabled: bool = False
+    langfuse_host: str = "http://localhost:3000"
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
 
     # database + RAG
     database_url: str = "postgresql://postgres:postgres@localhost:5432/srecopilot"
