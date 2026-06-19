@@ -12,6 +12,7 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langgraph.types import Command
 
 from app.core.cost import summarize_cost
+from app.core.observability import setup_tracing
 from app.graph.build import build_graph_default
 from mcp_servers.common.ssh import run_sandbox
 
@@ -55,6 +56,7 @@ async def run_scenario(s: dict) -> dict:
 
 
 async def main() -> None:
+    setup_tracing()  # eval runs also export traces to Phoenix
     scenarios = [yaml.safe_load(p.read_text()) for p in sorted(SCEN.glob("*.yaml"))]
     results = []
     for s in scenarios:
