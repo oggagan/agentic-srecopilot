@@ -36,7 +36,11 @@ alert
   -> [human approval gate]   durable interrupt, state persisted to Postgres
   -> execute (token gated, sandbox only)
   -> verify (re-check health, compute MTTR)
+  -> recovered? report : retry (bounded) then escalate
 ```
+
+Resolved incidents are written back into the vector store, so similar future incidents retrieve
+the past resolution (a learning loop).
 
 ## Architecture
 
@@ -77,6 +81,17 @@ PYTHONPATH=.:backend uv run python evals/run_offline.py
 
 Copy `.env.example` to `.env` and fill in the keys (DeepSeek, sandbox instance id and PEM path).
 
+### Or run the whole thing in containers
+
+```bash
+cd frontend && npm install && npm run build && cd ..   # build the dashboard once
+docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d --build
+# dashboard at http://localhost:8088, backend at http://localhost:8077
+```
+
+The backend container mounts your AWS creds, the PEM, and the embedding-model cache at runtime
+(run as a docker-group user so `${HOME}` resolves; under sudo pass `env HOME=$HOME`).
+
 ## Tests / CI
 
 `pytest` unit tests run on every push via `.github/workflows/ci.yml` (deterministic, no live infra).
@@ -84,5 +99,7 @@ The full eval suite runs against the sandbox and writes `evals/scorecard.md` and
 
 ## Status
 
-POC, then MVP. Built: parallel multi-agent diagnosis, RAG with citations, durable human approval,
-real sandbox remediation with verification, dashboard, evals, observability, cost control.
+Built end to end: parallel multi-agent diagnosis, RAG with citations, durable human approval,
+real sandbox remediation with verification, bounded retry then escalate, a learning loop, a React
+dashboard, an evals harness with a scorecard, OpenTelemetry tracing to Phoenix (and Langfuse),
+cost control, a deterministic CI test gate, and a containerized deployment.
