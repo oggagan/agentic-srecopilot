@@ -1,0 +1,32 @@
+# Deploy overlay: containerized backend + nginx served dashboard.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d --build
+# (dev workflow uses docker-compose.yml alone for infra and runs backend/frontend directly)
+services:
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/srecopilot
+      PHOENIX_OTLP_ENDPOINT: http://phoenix:4317
+      FLEET_READ_TARGET: sandbox
+      SANDBOX_PEM: /secrets/sandbox.pem
+      AWS_CLI: aws
+    volumes:
+      - ${SANDBOX_PEM}:/secrets/sandbox.pem:ro
+      - ${HOME}/.aws:/root/.aws:ro
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:ro
+    ports:
+      - "8077:8077"
+
+  web:
+    image: nginx:alpine
+    depends_on:
+      - backend
+    ports:
+      - "8088:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
