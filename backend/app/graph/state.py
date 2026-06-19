@@ -5,6 +5,7 @@ from typing import Annotated, TypedDict
 
 class IncidentState(TypedDict, total=False):
     trigger: str          # the incoming alert text
+    started_at: float     # epoch seconds, set by triage (for MTTR)
     incident_type: str    # set by triage
     target_service: str   # set by triage
     severity: str         # set by triage
@@ -15,3 +16,4 @@ class IncidentState(TypedDict, total=False):
     proposed_fix: str     # suggested remediation, NOT executed
     approval: dict        # human decision from the interrupt gate
     execution: dict       # result of executing the approved plan
+    verification: dict    # recovery check + MTTR after execution

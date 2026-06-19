@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     fleet_target_host: str = ""
     fleet_environment: str = "prod"
 
+    # sandbox (the only place writes/remediation run)
+    sandbox_instance_id: str = ""
+    sandbox_pem: str = ""
+    sandbox_ssh_user: str = "ubuntu"
+    aws_region: str = "ap-south-1"
+    aws_cli: str = ""
+    sandbox_write_token_secret: str = "dev-write-secret"
+
     # observability
     otel_enabled: bool = True
     phoenix_enabled: bool = True

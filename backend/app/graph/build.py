@@ -5,6 +5,7 @@ official langchain-mcp-adapters bridge. No writes, no remediation is executed.
 """
 import os
 import sys
+import time
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -13,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
+from app.core.approval import expected_token
 from app.core.llm_client import get_chat_model
 from app.core.pgvector_store import hybrid_search
 from app.graph.state import IncidentState
@@ -21,8 +23,18 @@ from app.graph.state import IncidentState
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def _text(out) -> str:
+    """Coerce an MCP tool result (string or list of content blocks) to plain text."""
+    if isinstance(out, str):
+        return out
+    if isinstance(out, list):
+        return "\n".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in out)
+    return str(out)
+
+
 def _mcp_client() -> MultiServerMCPClient:
     """Spawn the fleet-readonly MCP server as a stdio subprocess."""
+    env = {**os.environ, "PYTHONPATH": str(ROOT)}
     return MultiServerMCPClient(
         {
             "fleet": {
@@ -30,8 +42,15 @@ def _mcp_client() -> MultiServerMCPClient:
                 "args": ["-m", "mcp_servers.fleet_readonly.server"],
                 "transport": "stdio",
                 "cwd": str(ROOT),
-                "env": {**os.environ, "PYTHONPATH": str(ROOT)},
-            }
+                "env": env,
+            },
+            "fleet_write": {
+                "command": sys.executable,
+                "args": ["-m", "mcp_servers.fleet_write.server"],
+                "transport": "stdio",
+                "cwd": str(ROOT),
+                "env": env,
+            },
         }
     )
 
@@ -63,6 +82,7 @@ async def build_graph(checkpointer=None):
             "incident_type": r.incident_type,
             "target_service": r.target_service,
             "severity": r.severity,
+            "started_at": time.time(),
         }
 
     async def _run_tools(calls: list[tuple[str, dict]]) -> str:
@@ -72,7 +92,7 @@ async def build_graph(checkpointer=None):
             if tool is None:
                 continue
             out = await tool.ainvoke(args)
-            chunks.append(f"### {name}({args})\n{out}")
+            chunks.append(f"### {name}({args})\n{_text(out)}")
         return "\n\n".join(chunks)
 
     # Three investigators that fan out from triage and run concurrently.
@@ -145,15 +165,30 @@ async def build_graph(checkpointer=None):
         return {"approval": decision if isinstance(decision, dict) else {"approved": bool(decision)}}
 
     async def execute(state: IncidentState) -> dict:
-        # MVP-5 runs approved steps via the fleet-write MCP server against the sandbox.
-        # For now this is a dry run: it records what would run, but performs no writes.
+        # Real remediation, SANDBOX ONLY, via the token gated fleet-write server.
+        appr = state.get("approval") or {}
+        if not appr.get("approved"):
+            return {"execution": {"status": "rejected", "approver": appr.get("approver")}}
+        svc = state.get("target_service") or ""
+        if not svc or svc == "unknown":
+            return {"execution": {"status": "skipped", "reason": "no target service to remediate"}}
+        tool = by_name.get("restart_service")
+        if tool is None:
+            return {"execution": {"status": "error", "reason": "fleet-write unavailable"}}
+        out = _text(await tool.ainvoke({"service": svc, "approval_token": expected_token()}))
         return {
-            "execution": {
-                "status": "dry_run",
-                "note": "approved; real execution is wired to the sandbox in MVP-5",
-                "plan": state.get("proposed_fix"),
-            }
+            "execution": {"status": "executed", "action": f"restart_service({svc})", "result": out}
         }
+
+    async def verify(state: IncidentState) -> dict:
+        svc = state.get("target_service") or ""
+        recovered, detail = False, ""
+        tool = by_name.get("service_status")
+        if svc and svc != "unknown" and tool is not None:
+            detail = _text(await tool.ainvoke({"service": svc}))
+            recovered = "Active: active" in detail or "active (running)" in detail
+        mttr = round(time.time() - state["started_at"], 1) if state.get("started_at") else None
+        return {"verification": {"recovered": recovered, "mttr_seconds": mttr, "detail": detail[:300]}}
 
     def after_gate(state: IncidentState) -> str:
         return "execute" if (state.get("approval") or {}).get("approved") else END
@@ -172,10 +207,12 @@ async def build_graph(checkpointer=None):
         g.add_edge(n, "diagnose")  # fan in: diagnose waits for all three
     g.add_node("gate", gate)
     g.add_node("execute", execute)
+    g.add_node("verify", verify)
     g.add_edge("diagnose", "propose")
     g.add_edge("propose", "gate")
     g.add_conditional_edges("gate", after_gate, {"execute": "execute", END: END})
-    g.add_edge("execute", END)
+    g.add_edge("execute", "verify")
+    g.add_edge("verify", END)
     return g.compile(checkpointer=checkpointer)
 
 
