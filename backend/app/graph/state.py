@@ -17,3 +17,5 @@ class IncidentState(TypedDict, total=False):
     approval: dict        # human decision from the interrupt gate
     execution: dict       # result of executing the approved plan
     verification: dict    # recovery check + MTTR after execution
+    retry_count: int      # remediation attempts so far (bounded)
+    escalated: bool       # true if retries exhausted without recovery
