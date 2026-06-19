@@ -1,0 +1,12 @@
+id: demoapp_down
+description: demoapp systemd service is stopped on the sandbox
+trigger: "demoapp service is down, connection refused on port 8090"
+inject:
+  - "sudo systemctl stop demoapp"
+reset:
+  - "sudo systemctl start demoapp"
+ground_truth:
+  incident_type: service_down
+  target_service: demoapp
+  should_recover: true
+negative_control: false

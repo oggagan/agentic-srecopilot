@@ -1,0 +1,42 @@
+{
+  "summary": {
+    "scenarios": 3,
+    "diagnosis_accuracy": 1.0,
+    "remediation_success_rate": 1.0,
+    "avg_mttr_seconds": 23.2,
+    "false_positive_rate": 0.0,
+    "total_usd": 0.00591
+  },
+  "results": [
+    {
+      "id": "demoapp_down",
+      "control": false,
+      "predicted_type": "service_down",
+      "expected_type": "service_down",
+      "diagnosis_correct": true,
+      "recovered": true,
+      "mttr_seconds": 24.5,
+      "usd": 0.00194
+    },
+    {
+      "id": "demoapp_down_alt",
+      "control": false,
+      "predicted_type": "service_down",
+      "expected_type": "service_down",
+      "diagnosis_correct": true,
+      "recovered": true,
+      "mttr_seconds": 22.0,
+      "usd": 0.00188
+    },
+    {
+      "id": "healthy_control",
+      "control": true,
+      "predicted_type": "unknown",
+      "expected_type": "healthy_or_unknown",
+      "diagnosis_correct": true,
+      "recovered": false,
+      "mttr_seconds": 17.7,
+      "usd": 0.00209
+    }
+  ]
+}

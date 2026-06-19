@@ -1,0 +1,9 @@
+id: healthy_control
+description: system healthy; a vague alert must not be misdiagnosed as a down service
+trigger: "a user mentioned the dashboard felt a little slow earlier today"
+inject: []
+reset: []
+ground_truth:
+  incident_type: healthy_or_unknown
+  should_recover: true
+negative_control: true
